@@ -15,7 +15,7 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir \
     "pydantic>=2.8" "pydantic-settings>=2.4" \
     "psycopg[binary]>=3.2" "pyyaml>=6.0" "python-dateutil>=2.9" \
-    "structlog>=24.1" "typer>=0.12" "fundus>=0.6"
+    "structlog>=24.1" "typer>=0.12" "fundus>=0.5"
 
 COPY shared/   ./shared/
 COPY services/__init__.py ./services/__init__.py
