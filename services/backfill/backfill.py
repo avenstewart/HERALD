@@ -80,6 +80,22 @@ def _resolve_publishers(dotted_names: list[str]):
     return resolved
 
 
+def _article_url(article) -> str | None:
+    """Robustly extract the URL from a Fundus Article, across API versions."""
+    direct = getattr(article, "url", None)
+    if direct:
+        return direct
+    html = getattr(article, "html", None)
+    if html is None:
+        return None
+    # Fundus HTML objects expose the URL under one of these names depending on version.
+    for attr in ("requested_url", "responded_url", "source_url", "url"):
+        val = getattr(html, attr, None)
+        if val:
+            return val
+    return None
+
+
 def _fundus_to_record(article, fallback_source_name: str) -> dict:
     """Normalize a Fundus Article object to our upsert_article kwargs."""
     title = getattr(article, "title", None) or None
@@ -87,10 +103,9 @@ def _fundus_to_record(article, fallback_source_name: str) -> dict:
     published = getattr(article, "publishing_date", None)
     authors = getattr(article, "authors", None)
     author = ", ".join(authors) if authors else None
-    url = getattr(article, "url", None) or getattr(article, "html", {}).get("url")
     language = getattr(article, "lang", None) or "en"
     return {
-        "url": url,
+        "url": _article_url(article),
         "title": title,
         "content": text,
         "author": author,
