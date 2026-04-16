@@ -75,6 +75,33 @@ services:
         ipv4_address: ${HERALD_REDIS_IP}
     restart: unless-stopped
 
+  # ── RSSHub + Browserless (third-party images) ──────────────────────────────
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: herald_rsshub
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: redis://${REDIS_HOST}:${REDIS_PORT}/${REDIS_DB_RSSHUB:-1}
+      PUPPETEER_WS_ENDPOINT: ws://${HERALD_BROWSERLESS_IP}:3000
+      REQUEST_TIMEOUT: "30000"
+    networks:
+      herald-net:
+        ipv4_address: ${HERALD_RSSHUB_IP}
+    restart: unless-stopped
+
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: herald_browserless
+    environment:
+      CONCURRENT: "5"
+      TIMEOUT: "30000"
+      TOKEN: ""
+    networks:
+      herald-net:
+        ipv4_address: ${HERALD_BROWSERLESS_IP}
+    restart: unless-stopped
+
   # ── application services ────────────────────────────────────────────────────
   feed_poller:
     build:

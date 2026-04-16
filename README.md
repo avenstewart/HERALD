@@ -52,7 +52,8 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 | `postgres` schema + migration `0001_articles` | ✅ shipped |
 | `timescaledb` schema (hypertables, retention, migration `0002_gdelt`) | ✅ shipped |
 | `gdelt_ingestor` service | ✅ shipped |
-| `rsshub` + `browserless` for JS-rendered sources | 🛠️ planned |
+| `rsshub` + `browserless` for JS-rendered sources | ✅ shipped |
+| Expanded source catalogue (~15 sources) | ✅ shipped |
 | `backfill` service (Fundus + CC-NEWS) | 🛠️ planned |
 
 ---
@@ -67,15 +68,37 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 | `herald_feed_poller` | RSS poller | `HERALD_FEED_POLLER_IP` |
 | `herald_extractor` | Trafilatura worker | `HERALD_EXTRACTOR_IP` |
 | `herald_gdelt_ingestor` | GDELT v2 ingestor | `HERALD_GDELT_INGESTOR_IP` |
+| `herald_rsshub` | RSS generator for sources without native feeds | `HERALD_RSSHUB_IP` |
+| `herald_browserless` | Headless Chromium for JS-rendered sites | `HERALD_BROWSERLESS_IP` |
 | `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
 
-Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist. Example using a macvlan driver:
+Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist.
+
+### Picking a network driver
+
+**Bridge (recommended for most users)** — Docker's default. Containers are reachable from the Docker host by their container IPs, port-mapped services are reachable from the LAN via the host's IP. No special routing setup. The `HERALD_*_IP` variables still work but are scoped to the internal Docker bridge subnet.
+
+```bash
+docker network create --driver bridge \
+  --subnet 172.28.0.0/24 <network-name>
+```
+
+**Macvlan (advanced)** — Gives each container its own IP on your physical LAN, so any device on the LAN can reach containers directly. Useful when you want stable LAN-addressable services without port-mapping, or for multi-host discovery.
 
 ```bash
 docker network create --driver macvlan \
-  --subnet <your subnet> --gateway <your gateway> \
+  --subnet <your LAN subnet> --gateway <your LAN gateway> \
   -o parent=<host iface> <network-name>
 ```
+
+> ⚠️ **Macvlan gotcha** — by Linux kernel design, the Docker host itself cannot reach containers on a macvlan network it hosts (other machines on the LAN can). If you deploy on macvlan, either run administrative commands (`./scripts/bootstrap_db.sh`, `docker exec psql`, etc.) from a different LAN machine, or add a macvlan shim interface on the host:
+> ```bash
+> sudo ip link add mvshim link <parent iface> type macvlan mode bridge
+> sudo ip addr add <unused host IP>/32 dev mvshim
+> sudo ip link set mvshim up
+> sudo ip route add <container subnet>/24 dev mvshim
+> ```
+> Persist via your distro's network config (netplan / systemd-networkd / `/etc/network/interfaces`).
 
 Set `HERALD_NETWORK_NAME` in `.env` to match the name you chose, and assign static IPs for each container via the `HERALD_*_IP` variables. Compose will refuse to start services with missing IP values — that's intentional, it prevents accidental address collisions.
 
@@ -194,10 +217,14 @@ FastMCP server on port 8000. Exposes article query tools to consuming agents. Co
 ### `gdelt_ingestor`
 Polls `http://data.gdeltproject.org/gdeltv2/lastupdate.txt` every 60s. When a new 15-minute batch appears, downloads the Events and GKG CSVs (Mentions is skipped by default), parses them, and bulk-inserts into TimescaleDB hypertables. Batch state tracked in a `gdelt_state` singleton table so restarts don't re-ingest.
 
-**Per-batch scale:** Events ≈ 40–100k rows, GKG ≈ 200–500k rows. At 2-year retention with TimescaleDB compression, expect ~150–250 GB on the Timescale volume.
+**Observed scale:** ~1,000 events + ~900 GKG records per 15-min batch → ~180k rows/day, ~65M rows/year. Row payload is small (events ≈ 250 B, GKG ≈ 1 KB with the top-40 GCAM dims). At 2-year retention, expect **~5–7 GB** on the Timescale volume before TimescaleDB compression, ~2 GB after.
+
+### `rsshub` + `browserless`
+Third-party containers that generate RSS feeds for sites lacking native ones. [RSSHub](https://docs.rsshub.app/) supports hundreds of named routes (Reuters, AP, Politico, Brookings, etc.). It caches responses in Redis DB 1 (separate from the app queue) and delegates JS-heavy pages to `browserless/chromium` via Puppeteer over WebSocket.
+
+Source entries in `feeds.yaml` that declare `rsshub_route:` instead of `url:` are resolved against `http://${RSSHUB_HOST}:${RSSHUB_PORT}` at poll time.
 
 ### Planned services
-- **`rsshub`** + **`browserless`** — third-party Docker images for sources without native RSS / JS-rendered sites.
 - **`backfill`** — Fundus-based historical crawl (live websites + CC-NEWS archive). Runs under compose profile `backfill`.
 
 ---

@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     extractor_fetch_timeout: int = 15
     dedup_ttl_days: int = 30
 
+    # ── RSSHub ──────────────────────────────────────────────────────────────
+    rsshub_host: str = "rsshub"
+    rsshub_port: int = 1200
+
     # ── bootstrap (only used by scripts/bootstrap_db.py) ────────────────────
     bootstrap_pg_superuser: str = "postgres"
     bootstrap_pg_superpass: str = ""
@@ -119,6 +123,10 @@ class Settings(BaseSettings):
             self.timescale_db,
             driver="postgresql+psycopg",
         )
+
+    @property
+    def rsshub_url(self) -> str:
+        return f"http://{self.rsshub_host}:{self.rsshub_port}"
 
     @property
     def redis_url(self) -> str:

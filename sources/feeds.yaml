@@ -1,17 +1,30 @@
 # HERALD feed catalogue.
 #
 # Each source has:
-#   name       — human-readable label (stored on every article).
-#   tier       — A (2 min), B (5 min), C (15 min).
-#   category   — free-form label, surfaced in MCP query filters.
-#   url        — direct RSS/Atom URL (skip `rsshub_route` if set).
-#   rsshub_route — RSSHub path (prefix with /), used only when no native feed
-#                  is available. Not exercised in the initial release.
+#   name         — human-readable label (stored on every article).
+#   tier         — A (2 min), B (5 min), C (15 min).
+#   category     — free-form label, surfaced in MCP query filters.
+#   url          — direct RSS/Atom URL.
+#   rsshub_route — RSSHub path (prefix with /). Used instead of `url` when the
+#                  source has no native feed. Requires the rsshub service.
 #
-# The initial release ships five reliable direct-RSS seed sources. More are
-# added as the RSSHub service is rolled out in a follow-up release.
+# Tier guidance: A for breaking-news wires and high-urgency regulatory pings,
+# B for mainstream world/business news, C for think tanks and slow-moving
+# policy content.
 
 sources:
+  # ── Wire / breaking news ────────────────────────────────────────────────
+  - name: Reuters World
+    rsshub_route: /reuters/world
+    tier: A
+    category: wire
+
+  - name: AP Top News
+    rsshub_route: /apnews/topics/apf-topnews
+    tier: A
+    category: wire
+
+  # ── World / mainstream ──────────────────────────────────────────────────
   - name: BBC World Service
     url: https://feeds.bbci.co.uk/news/world/rss.xml
     tier: B
@@ -19,16 +32,63 @@ sources:
 
   - name: Al Jazeera English
     url: https://www.aljazeera.com/xml/rss/all.xml
-    tier: A
-    category: wire
+    tier: B
+    category: world
+
+  - name: The Guardian World
+    url: https://www.theguardian.com/world/rss
+    tier: B
+    category: world
+
+  - name: Deutsche Welle English
+    url: https://rss.dw.com/xml/rss-en-all
+    tier: B
+    category: world
+
+  - name: Financial Times World
+    url: https://www.ft.com/world?format=rss
+    tier: B
+    category: business
 
   - name: NPR News
     url: https://feeds.npr.org/1001/rss.xml
     tier: B
     category: general
 
+  # ── Regulatory / macro ──────────────────────────────────────────────────
   - name: FDA News Releases
     url: https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml
     tier: A
     category: regulatory
 
+  - name: Federal Reserve Press Releases
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    tier: B
+    category: macro
+
+  - name: BLS News Releases
+    url: https://www.bls.gov/feed/bls_latest.rss
+    tier: B
+    category: macro
+
+  # ── US politics ─────────────────────────────────────────────────────────
+  - name: Politico
+    rsshub_route: /politico
+    tier: B
+    category: politics
+
+  - name: The Hill
+    rsshub_route: /thehill
+    tier: B
+    category: politics
+
+  # ── Think tanks (slow-moving) ───────────────────────────────────────────
+  - name: Brookings
+    rsshub_route: /brookings
+    tier: C
+    category: analysis
+
+  - name: Council on Foreign Relations
+    rsshub_route: /cfr
+    tier: C
+    category: analysis

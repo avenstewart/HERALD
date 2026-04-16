@@ -22,7 +22,6 @@ from shared.utils import domain_of, utcnow
 
 log = configure_logging("feed_poller")
 
-RSSHUB_BASE = "http://rsshub:1200"  # only used if a source has rsshub_route; RSSHub lands in a later release
 USER_AGENT = "HERALD/0.1 (+https://github.com/) feed-poller"
 
 
@@ -47,7 +46,7 @@ async def enqueue(redis: Redis, source: Source, normalized_url: str) -> None:
 
 async def poll_source_once(client: httpx.AsyncClient, redis: Redis, source: Source) -> int:
     try:
-        url = source.resolve_url(RSSHUB_BASE)
+        url = source.resolve_url(settings.rsshub_url)
     except ValueError as e:
         log.error("source_config_invalid", source=source.name, error=str(e))
         return 0
