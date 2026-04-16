@@ -17,8 +17,8 @@ sources:
     tier: B
     category: world
 
-  - name: Reuters World
-    url: https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best
+  - name: Al Jazeera English
+    url: https://www.aljazeera.com/xml/rss/all.xml
     tier: A
     category: wire
 
