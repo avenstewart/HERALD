@@ -8,9 +8,10 @@
 #   rsshub_route — RSSHub path (prefix with /). Used instead of `url` when the
 #                  source has no native feed. Requires the rsshub service.
 #
-# Tier guidance: A for breaking-news wires and high-urgency regulatory pings,
-# B for mainstream world/business news, C for think tanks and slow-moving
-# policy content.
+# Before adding an RSSHub route, verify it exists in the RSSHub build you're
+# running — routes come and go. Quick check:
+#     curl -v http://<rsshub host>:1200/<route>
+# A `NotFoundError` in RSSHub's logs means the route isn't registered.
 
 sources:
   # ── Wire / breaking news ────────────────────────────────────────────────
@@ -65,30 +66,3 @@ sources:
     url: https://www.federalreserve.gov/feeds/press_all.xml
     tier: B
     category: macro
-
-  - name: BLS News Releases
-    url: https://www.bls.gov/feed/bls_latest.rss
-    tier: B
-    category: macro
-
-  # ── US politics ─────────────────────────────────────────────────────────
-  - name: Politico
-    rsshub_route: /politico
-    tier: B
-    category: politics
-
-  - name: The Hill
-    rsshub_route: /thehill
-    tier: B
-    category: politics
-
-  # ── Think tanks (slow-moving) ───────────────────────────────────────────
-  - name: Brookings
-    rsshub_route: /brookings
-    tier: C
-    category: analysis
-
-  - name: Council on Foreign Relations
-    rsshub_route: /cfr
-    tier: C
-    category: analysis

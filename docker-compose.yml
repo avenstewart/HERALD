@@ -143,6 +143,20 @@ services:
         ipv4_address: ${HERALD_GDELT_INGESTOR_IP}
     restart: unless-stopped
 
+  # ── one-off backfill (docker compose --profile backfill run --rm backfill ...) ─
+  backfill:
+    build:
+      context: .
+      dockerfile: services/backfill/Dockerfile
+    image: herald_backfill
+    container_name: herald_backfill
+    profiles: ["backfill"]
+    env_file: .env
+    networks:
+      herald-net:
+        ipv4_address: ${HERALD_BACKFILL_IP}
+    restart: "no"
+
   mcp_server:
     build:
       context: .

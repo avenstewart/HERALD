@@ -53,8 +53,8 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 | `timescaledb` schema (hypertables, retention, migration `0002_gdelt`) | ✅ shipped |
 | `gdelt_ingestor` service | ✅ shipped |
 | `rsshub` + `browserless` for JS-rendered sources | ✅ shipped |
-| Expanded source catalogue (~15 sources) | ✅ shipped |
-| `backfill` service (Fundus + CC-NEWS) | 🛠️ planned |
+| Expanded source catalogue (10 sources) | ✅ shipped |
+| `backfill` service (Fundus + CC-NEWS) | ✅ shipped |
 
 ---
 
@@ -71,6 +71,7 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 | `herald_rsshub` | RSS generator for sources without native feeds | `HERALD_RSSHUB_IP` |
 | `herald_browserless` | Headless Chromium for JS-rendered sites | `HERALD_BROWSERLESS_IP` |
 | `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
+| `herald_backfill` | One-shot Fundus CLI (profile `backfill`) | `HERALD_BACKFILL_IP` |
 
 Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist.
 
@@ -224,8 +225,26 @@ Third-party containers that generate RSS feeds for sites lacking native ones. [R
 
 Source entries in `feeds.yaml` that declare `rsshub_route:` instead of `url:` are resolved against `http://${RSSHUB_HOST}:${RSSHUB_PORT}` at poll time.
 
-### Planned services
-- **`backfill`** — Fundus-based historical crawl (live websites + CC-NEWS archive). Runs under compose profile `backfill`.
+### `backfill`
+One-shot CLI backed by [Fundus](https://github.com/flairNLP/fundus) for historical data. Not started by default — invoked on demand via compose profile `backfill`:
+
+```bash
+# List every publisher Fundus knows about
+docker compose --profile backfill run --rm backfill list-publishers
+
+# Live-crawl publishers' websites for the last 3 months
+docker compose --profile backfill run --rm backfill \
+  crawl --publishers us.APNews,uk.BBC,qa.AlJazeera --months 3
+
+# Pull historical articles from the CC-NEWS CommonCrawl archive
+docker compose --profile backfill run --rm backfill \
+  ccnews --publishers us.APNews --start 2024-01-01 --end 2024-06-01
+
+# Summarize DB counts by extraction method (trafilatura / fundus / fundus_ccnews)
+docker compose --profile backfill run --rm backfill status
+```
+
+Backfilled articles land in the same `articles` table as the live pipeline. The `extraction_method` column distinguishes rows (`trafilatura` for live, `fundus` for live-crawled, `fundus_ccnews` for CommonCrawl). URL conflicts do idempotent updates, so re-running a backfill is safe.
 
 ---
 

@@ -1,0 +1,39 @@
+# Reference catalogue of Fundus publishers worth backfilling.
+#
+# This file is descriptive only — the backfill CLI reads publisher names from
+# command-line arguments, not from this file. Use it as a quick reference for
+# what's available and which names map to which outlets. For the full authoritative
+# list on the installed Fundus version, run:
+#
+#     docker compose --profile backfill run --rm backfill list-publishers
+#
+# Names are `region.Publisher` as Fundus exposes them.
+
+wire:
+  - us.APNews
+  - us.Reuters            # availability depends on Fundus version
+  - fr.AFP
+
+business:
+  - us.TheNewYorkTimes
+  - us.TheWashingtonPost
+  - us.Bloomberg
+  - uk.TheFinancialTimes
+  - us.CNBC
+  - uk.TheEconomist
+
+world:
+  - uk.BBC
+  - uk.TheGuardian
+  - qa.AlJazeera
+  - de.DeutscheWelle
+
+politics:
+  - us.Politico
+  - us.TheHill
+  - us.NPR
+
+analysis:
+  - us.Brookings
+  - us.ForeignAffairs
+  - us.TheAtlantic
