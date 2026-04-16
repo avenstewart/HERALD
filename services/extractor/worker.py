@@ -27,6 +27,19 @@ log = configure_logging("extractor")
 CONSUMER_NAME = os.environ.get("HOSTNAME") or socket.gethostname() or "extractor-1"
 BLOCK_MS = 5_000
 
+# Content-hash collision probe: detect cases where a site returns identical
+# content (e.g. a "rate limit" block page) under different URLs. We don't
+# include same-URL rows here — those go through the upsert path.
+DUPE_PROBE_SQL = text(
+    """
+    SELECT url FROM articles
+    WHERE content_hash = :content_hash
+      AND url != :url
+      AND ingested_at > NOW() - INTERVAL '30 days'
+    LIMIT 1
+    """
+)
+
 UPSERT_SQL = text(
     """
     INSERT INTO articles (
@@ -66,8 +79,16 @@ async def ensure_group(redis: Redis) -> None:
         raise
 
 
-async def store(engine: AsyncEngine, article: ExtractedArticle, meta: dict[str, str]) -> None:
+async def store(engine: AsyncEngine, article: ExtractedArticle, meta: dict[str, str]) -> str | None:
+    """Store the article; returns the URL of a colliding row if we skipped it."""
     async with engine.begin() as conn:
+        collision = await conn.execute(
+            DUPE_PROBE_SQL,
+            {"content_hash": article.content_hash, "url": article.url},
+        )
+        existing = collision.scalar_one_or_none()
+        if existing is not None:
+            return existing
         await conn.execute(
             UPSERT_SQL,
             {
@@ -85,6 +106,7 @@ async def store(engine: AsyncEngine, article: ExtractedArticle, meta: dict[str, 
                 "extraction_method": "trafilatura",
             },
         )
+    return None
 
 
 async def process_message(
@@ -114,11 +136,17 @@ async def process_message(
         return
 
     try:
-        await store(engine, article, data)
+        collision = await store(engine, article, data)
         await redis.xack(
             settings.queue_stream_name, settings.extractor_consumer_group, message_id
         )
-        log.info("stored", url=url, title=article.title, words=article.word_count)
+        if collision:
+            log.info(
+                "duplicate_content_skipped", url=url, title=article.title,
+                words=article.word_count, matches=collision,
+            )
+        else:
+            log.info("stored", url=url, title=article.title, words=article.word_count)
     except Exception as e:  # noqa: BLE001
         log.exception("db_write_failed", url=url, error=str(e))
         # Do not ack — message will be reclaimable by another consumer.

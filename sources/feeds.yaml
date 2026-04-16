@@ -32,7 +32,3 @@ sources:
     tier: A
     category: regulatory
 
-  - name: Federal Register
-    url: https://www.federalregister.gov/api/v1/articles.rss?per_page=40
-    tier: B
-    category: regulatory
