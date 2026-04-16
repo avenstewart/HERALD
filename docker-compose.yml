@@ -1,8 +1,9 @@
 # HERALD docker-compose
 #
 # All containers are prefixed `herald_` and attach to the external network
-# `BlackMesa-VLAN`. Each container is assigned a static IPv4 on that network
-# via env vars (HERALD_*_IP) so addressing is stable across redeploys.
+# named by HERALD_NETWORK_NAME. Each container is assigned a static IPv4 on
+# that network via env vars (HERALD_*_IP) so addressing is stable across
+# redeploys.
 #
 # Bundled databases (postgres, redis, timescaledb) live under the `bundled-db`
 # profile so they only start when COMPOSE_PROFILES contains that name.
@@ -29,7 +30,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_POSTGRES_IP}
     restart: unless-stopped
 
@@ -51,7 +52,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_TIMESCALE_IP}
     restart: unless-stopped
 
@@ -70,7 +71,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_REDIS_IP}
     restart: unless-stopped
 
@@ -86,7 +87,7 @@ services:
     volumes:
       - ./sources:/app/sources:ro
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_FEED_POLLER_IP}
     restart: unless-stopped
 
@@ -102,7 +103,7 @@ services:
     container_name: herald_extractor
     env_file: .env
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_EXTRACTOR_IP}
     restart: unless-stopped
 
@@ -119,14 +120,14 @@ services:
     ports:
       - "${MCP_PORT:-8000}:8000"
     networks:
-      BlackMesa-VLAN:
+      herald-net:
         ipv4_address: ${HERALD_MCP_SERVER_IP}
     restart: unless-stopped
 
 networks:
-  BlackMesa-VLAN:
+  herald-net:
     external: true
-    name: BlackMesa-VLAN
+    name: ${HERALD_NETWORK_NAME:-herald-net}
 
 volumes:
   postgres_data:

@@ -41,6 +41,6 @@ def test_external_db_swap_is_pure_config():
     """Demonstrate the swappability requirement: changing host/port/user
     propagates through the URL without code changes."""
     bundled = Settings(postgres_host="postgres", postgres_password="x")
-    external = Settings(postgres_host="192.168.1.220", postgres_port=15432, postgres_password="x")
+    external = Settings(postgres_host="db.example.internal", postgres_port=15432, postgres_password="x")
     assert "postgres:5432" in bundled.postgres_url
-    assert "192.168.1.220:15432" in external.postgres_url
+    assert "db.example.internal:15432" in external.postgres_url

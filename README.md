@@ -6,7 +6,7 @@ A self-hosted, open-source news aggregation pipeline. HERALD pulls articles from
 
 The system is designed to deploy as a self-contained Docker stack **or** be pointed at externally-managed Postgres / Redis / TimescaleDB instances — the difference is a single config flag.
 
-All HERALD containers are prefixed `herald_` and attach to the external Docker network `BlackMesa-VLAN` with statically-assigned IPv4 addresses (set in `.env`).
+All HERALD containers are prefixed `herald_` and attach to a Docker network with statically-assigned IPv4 addresses (set in `.env`).
 
 ---
 
@@ -61,7 +61,7 @@ The bootstrap script and docker-compose **already provision the TimescaleDB inst
 
 ## Container naming and network
 
-| Container | Service | VLAN IP variable |
+| Container | Service | IP variable |
 |---|---|---|
 | `herald_postgres` | bundled articles DB | `HERALD_POSTGRES_IP` |
 | `herald_timescaledb` | bundled GDELT DB | `HERALD_TIMESCALE_IP` |
@@ -70,15 +70,15 @@ The bootstrap script and docker-compose **already provision the TimescaleDB inst
 | `herald_extractor` | Trafilatura worker | `HERALD_EXTRACTOR_IP` |
 | `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
 
-Every container attaches to the external network `BlackMesa-VLAN`. The network itself is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist:
+Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist. Example using a macvlan driver:
 
 ```bash
 docker network create --driver macvlan \
   --subnet <your subnet> --gateway <your gateway> \
-  -o parent=<host iface> BlackMesa-VLAN
+  -o parent=<host iface> <network-name>
 ```
 
-Assign static IPs for each container in `.env` (the `HERALD_*_IP` variables). Compose will refuse to start services with missing IP values — that's intentional, it prevents accidental address collisions.
+Set `HERALD_NETWORK_NAME` in `.env` to match the name you chose, and assign static IPs for each container via the `HERALD_*_IP` variables. Compose will refuse to start services with missing IP values — that's intentional, it prevents accidental address collisions.
 
 ### Horizontally scaling the extractor
 Because a fixed `container_name` precludes `deploy.replicas`, the single `herald_extractor` container is the default. To add extraction capacity, launch additional containers (e.g. `herald_extractor_2`) on distinct IPs with the same `.env`; they'll join the same Redis consumer group (`EXTRACTOR_CONSUMER_GROUP=herald-extractors`) automatically.
@@ -93,7 +93,7 @@ cd herald
 
 # 1. Configure
 cp .env.example .env
-${EDITOR:-nano} .env       # passwords + HERALD_*_IP VLAN addresses
+${EDITOR:-nano} .env       # passwords, network name, HERALD_*_IP addresses
 
 # 2. Start the bundled databases
 docker compose up -d postgres timescaledb redis
@@ -116,11 +116,11 @@ curl -s http://localhost:8000/healthz || true
 
 ## Deploying to a remote Docker host
 
-HERALD is deployed in this project against a remote Docker host on the local network at `192.168.1.220`. The mechanism is stock Docker contexts — the compose file is unchanged.
+HERALD is deployed in this project against a remote Docker host on the local network. The mechanism is stock Docker contexts — the compose file is unchanged.
 
 ```bash
 # One-time: register the remote host as a Docker context
-docker context create herald-remote --docker host=tcp://192.168.1.220:2375
+docker context create herald-remote --docker host=tcp://localhost:2375
 
 # Activate it
 docker context use herald-remote
@@ -133,7 +133,7 @@ docker compose logs -f mcp_server
 docker context use default
 ```
 
-If the remote host is reachable only over SSH, use `ssh://user@192.168.1.220` as the host URL instead of `tcp://...`.
+If the remote host is reachable only over SSH, use `ssh://user@ipaddress` as the host URL instead of `tcp://...`.
 
 > **Note on volumes:** the bundled `postgres_data`, `timescale_data`, and `redis_data` volumes live on whichever Docker host is active. When you switch contexts, you switch data stores. For production deployments, point HERALD at managed databases (next section) and avoid the bundled containers.
 
@@ -168,7 +168,8 @@ Every config knob is a single environment variable. Defaults match the bundled d
 | `REDIS_HOST` / `_PORT` / `_DB_APP` / `_DB_RSSHUB` / `_PASSWORD` | `redis` / `6379` / `0` / `1` / *(empty)* | Queue + dedup state |
 | `MCP_HOST` / `_PORT` / `_TRANSPORT` | `0.0.0.0` / `8000` / `streamable-http` | MCP server bind |
 | `SOURCES_FILE` | `/app/sources/feeds.yaml` | Source catalogue path inside containers |
-| `HERALD_POSTGRES_IP` / `_TIMESCALE_IP` / `_REDIS_IP` / `_FEED_POLLER_IP` / `_EXTRACTOR_IP` / `_MCP_SERVER_IP` | *(required)* | Static IPv4 on the `BlackMesa-VLAN` network |
+| `HERALD_NETWORK_NAME` | `herald-net` | Name of the external Docker network containers join |
+| `HERALD_POSTGRES_IP` / `_TIMESCALE_IP` / `_REDIS_IP` / `_FEED_POLLER_IP` / `_EXTRACTOR_IP` / `_MCP_SERVER_IP` | *(required)* | Static IPv4 for each container on the external network |
 | `EXTRACTOR_CONSUMER_GROUP` | `herald-extractors` | Redis Streams consumer group name |
 | `EXTRACTOR_FETCH_TIMEOUT` | `15` | HTTP timeout (seconds) for article downloads |
 | `DEDUP_TTL_DAYS` | `30` | TTL for the seen-URLs dedup window |
