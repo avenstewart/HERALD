@@ -44,6 +44,11 @@ class SourceInfo(BaseModel):
     article_count_24h: int
 
 
+class VolumeDataPoint(BaseModel):
+    bucket: datetime
+    article_count: int
+
+
 class IngestionStatus(BaseModel):
     queue_depth: int
     pending_messages: int
@@ -141,6 +146,42 @@ def register(mcp: FastMCP) -> None:
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, *params)
         return [_row_to_result(dict(r)) for r in rows]
+
+    @mcp.tool()
+    async def get_article_volume(
+        start_date: Annotated[str, Field(description="ISO-8601 lower bound on ingested_at")],
+        end_date: Annotated[str, Field(description="ISO-8601 upper bound on ingested_at")],
+        query: Annotated[
+            str | None,
+            Field(description="Optional full-text filter (websearch_to_tsquery syntax)"),
+        ] = None,
+        resolution: Annotated[
+            str, Field(description="'minute' | 'hour' | 'day'")
+        ] = "hour",
+    ) -> list[VolumeDataPoint]:
+        """Time-series of article counts — useful for detecting news volume spikes."""
+        sd = parse_date(start_date)
+        ed = parse_date(end_date)
+        if sd is None or ed is None:
+            raise ValueError("start_date and end_date must be ISO-8601 parseable")
+        trunc = {"minute": "minute", "hour": "hour", "day": "day"}.get(resolution, "hour")
+        params: list[Any] = [sd, ed]
+        query_clause = ""
+        if query:
+            params.append(query)
+            query_clause = f" AND search_vector @@ websearch_to_tsquery('english', ${len(params)})"
+        sql = f"""
+            SELECT date_trunc('{trunc}', ingested_at) AS bucket,
+                   COUNT(*)::int AS article_count
+            FROM articles
+            WHERE ingested_at >= $1 AND ingested_at <= $2{query_clause}
+            GROUP BY bucket
+            ORDER BY bucket
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+        return [VolumeDataPoint(**dict(r)) for r in rows]
 
     @mcp.tool()
     async def get_article_by_url(url: str) -> ArticleResult | None:

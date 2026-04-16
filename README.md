@@ -71,6 +71,7 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 | `herald_rsshub` | RSS generator for sources without native feeds | `HERALD_RSSHUB_IP` |
 | `herald_browserless` | Headless Chromium for JS-rendered sites | `HERALD_BROWSERLESS_IP` |
 | `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
+| `herald_maintenance` | Daily article retention enforcement | `HERALD_MAINTENANCE_IP` |
 | `herald_backfill` | One-shot Fundus CLI (profile `backfill`) | `HERALD_BACKFILL_IP` |
 
 Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist.
@@ -174,6 +175,10 @@ To run HERALD against existing managed instances:
 
 The bootstrap script is **idempotent** — re-running it against an already-configured instance is safe and does not change existing data.
 
+### Additional compose overrides
+
+For patterns that `.env` can't express — attaching services to extra networks, mounting TLS CA bundles, adding reverse-proxy labels, pinning image tags — copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and uncomment the blocks you need. Compose merges override files automatically on every invocation.
+
 ---
 
 ## Configuration reference
@@ -246,6 +251,9 @@ docker compose --profile backfill run --rm backfill status
 
 Backfilled articles land in the same `articles` table as the live pipeline. The `extraction_method` column distinguishes rows (`trafilatura` for live, `fundus` for live-crawled, `fundus_ccnews` for CommonCrawl). URL conflicts do idempotent updates, so re-running a backfill is safe.
 
+### `maintenance`
+Runs once every 24 hours. Nulls out `articles.content` for rows older than `RETENTION_CONTENT_DAYS` (default 180) and deletes rows entirely after `RETENTION_METADATA_DAYS` (default 730). Titles, URLs, source metadata, and timestamps are preserved through the 6-month mark; the full row is discarded at 2 years. GDELT hypertables use TimescaleDB's built-in retention policy (already configured in migration `0002_gdelt`).
+
 ---
 
 ## MCP tool reference
@@ -284,8 +292,8 @@ Top-N most-mentioned persons, organizations, or locations in a window.
 #### `gdelt_doc_search(query, timespan='24h', mode='artlist', max_records=75)`
 Proxy to GDELT's DOC 2.0 API — searches GDELT's 3-month rolling full-text index. Supports query operators like `theme:ECON_INFLATION`, `tone<-5`, `sourcecountry:US`, and phrase search.
 
-### Planned
-`get_article_volume` — time-series of article counts (detecting news volume spikes).
+#### `get_article_volume(start_date, end_date, query?, resolution='hour')`
+Time-series of article counts bucketed by `minute`/`hour`/`day`. Optional `query` applies a full-text filter. Useful for detecting news volume spikes around a topic.
 
 ---
 
