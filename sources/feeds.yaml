@@ -1,0 +1,38 @@
+# HERALD feed catalogue.
+#
+# Each source has:
+#   name       — human-readable label (stored on every article).
+#   tier       — A (2 min), B (5 min), C (15 min).
+#   category   — free-form label, surfaced in MCP query filters.
+#   url        — direct RSS/Atom URL (skip `rsshub_route` if set).
+#   rsshub_route — RSSHub path (prefix with /), used only when no native feed
+#                  is available. Not exercised in the initial release.
+#
+# The initial release ships five reliable direct-RSS seed sources. More are
+# added as the RSSHub service is rolled out in a follow-up release.
+
+sources:
+  - name: BBC World Service
+    url: https://feeds.bbci.co.uk/news/world/rss.xml
+    tier: B
+    category: world
+
+  - name: AP Top News
+    url: https://rsshub.app/apnews/topics/apf-topnews
+    tier: A
+    category: wire
+
+  - name: SEC Press Releases
+    url: https://www.sec.gov/rss/news/press.rss
+    tier: A
+    category: regulatory
+
+  - name: FDA News Releases
+    url: https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml
+    tier: A
+    category: regulatory
+
+  - name: Federal Register
+    url: https://www.federalregister.gov/api/v1/articles.rss?per_page=40
+    tier: B
+    category: regulatory

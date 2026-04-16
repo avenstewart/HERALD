@@ -1,0 +1,134 @@
+# HERALD docker-compose
+#
+# All containers are prefixed `herald_` and attach to the external network
+# `BlackMesa-VLAN`. Each container is assigned a static IPv4 on that network
+# via env vars (HERALD_*_IP) so addressing is stable across redeploys.
+#
+# Bundled databases (postgres, redis, timescaledb) live under the `bundled-db`
+# profile so they only start when COMPOSE_PROFILES contains that name.
+#   Standalone:    COMPOSE_PROFILES=bundled-db
+#   External DBs:  COMPOSE_PROFILES=              (and point *_HOST at them)
+
+services:
+  # ── infrastructure (bundled) ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: herald_postgres
+    profiles: ["bundled-db"]
+    environment:
+      POSTGRES_USER: ${BOOTSTRAP_PG_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${BOOTSTRAP_PG_SUPERPASS}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOTSTRAP_PG_SUPERUSER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_POSTGRES_IP}
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: herald_timescaledb
+    profiles: ["bundled-db"]
+    environment:
+      POSTGRES_USER: ${BOOTSTRAP_TS_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${BOOTSTRAP_TS_SUPERPASS}
+      POSTGRES_DB: postgres
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOTSTRAP_TS_SUPERUSER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_TIMESCALE_IP}
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: herald_redis
+    profiles: ["bundled-db"]
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_REDIS_IP}
+    restart: unless-stopped
+
+  # ── application services ────────────────────────────────────────────────────
+  feed_poller:
+    build:
+      context: .
+      dockerfile: services/feed_poller/Dockerfile
+    container_name: herald_feed_poller
+    env_file: .env
+    environment:
+      SOURCES_FILE: /app/sources/feeds.yaml
+    volumes:
+      - ./sources:/app/sources:ro
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_FEED_POLLER_IP}
+    restart: unless-stopped
+
+  # NOTE: the extractor is single-container here because Compose forbids
+  # `container_name` + `deploy.replicas`. To horizontally scale extraction,
+  # launch additional containers with distinct names (e.g. herald_extractor_2)
+  # from a sidecar compose file or `docker run`; they'll join the same Redis
+  # consumer group automatically via EXTRACTOR_CONSUMER_GROUP.
+  extractor:
+    build:
+      context: .
+      dockerfile: services/extractor/Dockerfile
+    container_name: herald_extractor
+    env_file: .env
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_EXTRACTOR_IP}
+    restart: unless-stopped
+
+  mcp_server:
+    build:
+      context: .
+      dockerfile: services/mcp_server/Dockerfile
+    container_name: herald_mcp_server
+    env_file: .env
+    environment:
+      SOURCES_FILE: /app/sources/feeds.yaml
+    volumes:
+      - ./sources:/app/sources:ro
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    networks:
+      BlackMesa-VLAN:
+        ipv4_address: ${HERALD_MCP_SERVER_IP}
+    restart: unless-stopped
+
+networks:
+  BlackMesa-VLAN:
+    external: true
+    name: BlackMesa-VLAN
+
+volumes:
+  postgres_data:
+  timescale_data:
+  redis_data:

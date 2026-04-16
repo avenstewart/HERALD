@@ -1,0 +1,292 @@
+# HERALD
+
+**Highly Extensible Aggregator for Real-time Linked Data**
+
+A self-hosted, open-source news aggregation pipeline. HERALD pulls articles from curated RSS sources, extracts clean text with [Trafilatura](https://trafilatura.readthedocs.io/), stores them in Postgres with full-text search, and exposes the corpus to consuming agents through a [FastMCP](https://github.com/jlowin/fastmcp) server.
+
+The system is designed to deploy as a self-contained Docker stack **or** be pointed at externally-managed Postgres / Redis / TimescaleDB instances — the difference is a single config flag.
+
+All HERALD containers are prefixed `herald_` and attach to the external Docker network `BlackMesa-VLAN` with statically-assigned IPv4 addresses (set in `.env`).
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                         HERALD                               │
+│              Article Stream + Event Stream                   │
+└─────────────────┬────────────────────────┬───────────────────┘
+                  │                        │
+         ┌────────▼────────┐     ┌─────────▼──────────┐
+         │  ARTICLE STREAM  │    │   EVENT STREAM      │
+         │                  │    │   (planned)         │
+         │  RSSHub*         │    │                     │
+         │  → Feed Poller   │    │  GDELT v2           │
+         │  → Trafilatura   │    │  Events / GKG       │
+         │  → Postgres      │    │  → TimescaleDB      │
+         │                  │    │                     │
+         │  Fundus*         │    │  GDELT DOC API*     │
+         └────────┬─────────┘    └──────────┬──────────┘
+                  │                         │
+                  └──────────┬──────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   FastMCP       │
+                    │   Server        │
+                    │   :8000         │
+                    └─────────────────┘
+```
+
+`*` items marked planned are scheduled for follow-up releases. The current release ships the article stream end-to-end (poller → extractor → Postgres → MCP) plus database scaffolding for the GDELT and Fundus components.
+
+---
+
+## What's in this release
+
+| Component | Status |
+|---|---|
+| `feed_poller` — direct-RSS poller | ✅ shipped |
+| `extractor` — Trafilatura workers | ✅ shipped |
+| `mcp_server` — FastMCP query interface | ✅ shipped (article tools) |
+| `postgres` schema + migration `0001_articles` | ✅ shipped |
+| `timescaledb` schema (hypertables, retention, GDELT migration `0002`) | 🛠️ planned |
+| `gdelt_ingestor` service | 🛠️ planned |
+| `rsshub` + `browserless` for JS-rendered sources | 🛠️ planned |
+| `backfill` service (Fundus + CC-NEWS) | 🛠️ planned |
+
+The bootstrap script and docker-compose **already provision the TimescaleDB instance**, so future releases only add code — no infrastructure churn.
+
+---
+
+## Container naming and network
+
+| Container | Service | VLAN IP variable |
+|---|---|---|
+| `herald_postgres` | bundled articles DB | `HERALD_POSTGRES_IP` |
+| `herald_timescaledb` | bundled GDELT DB | `HERALD_TIMESCALE_IP` |
+| `herald_redis` | queue + dedup | `HERALD_REDIS_IP` |
+| `herald_feed_poller` | RSS poller | `HERALD_FEED_POLLER_IP` |
+| `herald_extractor` | Trafilatura worker | `HERALD_EXTRACTOR_IP` |
+| `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
+
+Every container attaches to the external network `BlackMesa-VLAN`. The network itself is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist:
+
+```bash
+docker network create --driver macvlan \
+  --subnet <your subnet> --gateway <your gateway> \
+  -o parent=<host iface> BlackMesa-VLAN
+```
+
+Assign static IPs for each container in `.env` (the `HERALD_*_IP` variables). Compose will refuse to start services with missing IP values — that's intentional, it prevents accidental address collisions.
+
+### Horizontally scaling the extractor
+Because a fixed `container_name` precludes `deploy.replicas`, the single `herald_extractor` container is the default. To add extraction capacity, launch additional containers (e.g. `herald_extractor_2`) on distinct IPs with the same `.env`; they'll join the same Redis consumer group (`EXTRACTOR_CONSUMER_GROUP=herald-extractors`) automatically.
+
+---
+
+## Quickstart — standalone (bundled databases)
+
+```bash
+git clone <this-repo> herald
+cd herald
+
+# 1. Configure
+cp .env.example .env
+${EDITOR:-nano} .env       # passwords + HERALD_*_IP VLAN addresses
+
+# 2. Start the bundled databases
+docker compose up -d postgres timescaledb redis
+
+# 3. Create app DBs/users/extensions, run migrations
+./scripts/bootstrap_db.sh
+
+# 4. Start the application services
+docker compose up -d feed_poller extractor mcp_server
+
+# 5. Verify
+docker compose ps
+docker compose logs -f extractor   # should see "stored" events within ~5 min
+curl -s http://localhost:8000/healthz || true
+```
+
+`Makefile` shortcuts: `make up`, `make down`, `make logs`, `make ps`, `make bootstrap`, `make test`, `make migrate`.
+
+---
+
+## Deploying to a remote Docker host
+
+HERALD is deployed in this project against a remote Docker host on the local network at `192.168.1.220`. The mechanism is stock Docker contexts — the compose file is unchanged.
+
+```bash
+# One-time: register the remote host as a Docker context
+docker context create herald-remote --docker host=tcp://192.168.1.220:2375
+
+# Activate it
+docker context use herald-remote
+
+# From here on, every `docker compose ...` command runs against the remote host
+docker compose up -d
+docker compose logs -f mcp_server
+
+# Switch back to local
+docker context use default
+```
+
+If the remote host is reachable only over SSH, use `ssh://user@192.168.1.220` as the host URL instead of `tcp://...`.
+
+> **Note on volumes:** the bundled `postgres_data`, `timescale_data`, and `redis_data` volumes live on whichever Docker host is active. When you switch contexts, you switch data stores. For production deployments, point HERALD at managed databases (next section) and avoid the bundled containers.
+
+---
+
+## Using external Postgres / Redis / TimescaleDB
+
+To run HERALD against existing managed instances:
+
+1. **Edit `.env`** — set `*_HOST`, `*_PORT`, `*_USER`, `*_PASSWORD` for each external service.
+2. **Disable the bundled containers** — set `COMPOSE_PROFILES=` (empty), and `USE_BUNDLED_POSTGRES=false`, `USE_BUNDLED_TIMESCALE=false`, `USE_BUNDLED_REDIS=false`.
+3. **Provide bootstrap superuser creds** — `BOOTSTRAP_PG_SUPERUSER` / `BOOTSTRAP_PG_SUPERPASS` must be a principal authorized to `CREATE DATABASE` and `CREATE ROLE` on the target instance. Same for the TimescaleDB target.
+4. **Run bootstrap** — `./scripts/bootstrap_db.sh`. The script creates the application DB and role on each target, installs `pgcrypto`, `pg_trgm`, and `timescaledb`, runs Alembic migrations.
+5. **Start the application services** — `docker compose up -d feed_poller extractor mcp_server`.
+
+The bootstrap script is **idempotent** — re-running it against an already-configured instance is safe and does not change existing data.
+
+---
+
+## Configuration reference
+
+Every config knob is a single environment variable. Defaults match the bundled docker-compose stack.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `COMPOSE_PROFILES` | `bundled-db` | Set to empty when using external DBs |
+| `USE_BUNDLED_POSTGRES` | `true` | Application-side hint (not currently consumed by code) |
+| `USE_BUNDLED_TIMESCALE` | `true` | Same |
+| `USE_BUNDLED_REDIS` | `true` | Same |
+| `POSTGRES_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `postgres` / `5432` / `herald` / `herald` / *(required)* | Articles database |
+| `TIMESCALE_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `timescaledb` / `5432` / `herald_ts` / `herald` / *(required)* | GDELT database (provisioned now, unused until next release) |
+| `REDIS_HOST` / `_PORT` / `_DB_APP` / `_DB_RSSHUB` / `_PASSWORD` | `redis` / `6379` / `0` / `1` / *(empty)* | Queue + dedup state |
+| `MCP_HOST` / `_PORT` / `_TRANSPORT` | `0.0.0.0` / `8000` / `streamable-http` | MCP server bind |
+| `SOURCES_FILE` | `/app/sources/feeds.yaml` | Source catalogue path inside containers |
+| `HERALD_POSTGRES_IP` / `_TIMESCALE_IP` / `_REDIS_IP` / `_FEED_POLLER_IP` / `_EXTRACTOR_IP` / `_MCP_SERVER_IP` | *(required)* | Static IPv4 on the `BlackMesa-VLAN` network |
+| `EXTRACTOR_CONSUMER_GROUP` | `herald-extractors` | Redis Streams consumer group name |
+| `EXTRACTOR_FETCH_TIMEOUT` | `15` | HTTP timeout (seconds) for article downloads |
+| `DEDUP_TTL_DAYS` | `30` | TTL for the seen-URLs dedup window |
+| `BOOTSTRAP_PG_SUPERUSER` / `_SUPERPASS` | `postgres` / *(required)* | Used by bootstrap script only |
+| `BOOTSTRAP_TS_SUPERUSER` / `_SUPERPASS` | `postgres` / *(required)* | Used by bootstrap script only |
+| `LOG_LEVEL` | `INFO` | Service log level |
+
+URLs (`postgresql://...`, `redis://...`) are **assembled in `shared/settings.py`** from the parts above — there are no whole-URL env vars. This keeps the host swappable without string surgery.
+
+---
+
+## Services overview
+
+### `feed_poller`
+Async loop that polls every source in `sources/feeds.yaml` at its tier-defined interval (A: 2 min, B: 5 min, C: 15 min). Deduplicates URLs against a Redis SET (30-day TTL) and pushes new URLs onto the `herald:article_queue` Redis Stream as JSON-ish messages with source metadata.
+
+### `extractor`
+Workers (default 4 replicas) that consume from `herald:article_queue` via a shared Redis Streams consumer group (`herald-extractors`). Each worker downloads the article HTML with Trafilatura, extracts clean text + metadata, and upserts into the `articles` table. Messages are ACKed only after a successful insert so failures are retryable.
+
+### `mcp_server`
+FastMCP server on port 8000. Exposes article query tools to consuming agents. Connects to Postgres via an asyncpg pool. GDELT tools are scheduled for the next release.
+
+### Planned services
+- **`gdelt_ingestor`** — polls GDELT v2 every 15 min, writes Events + GKG to TimescaleDB hypertables.
+- **`rsshub`** + **`browserless`** — third-party Docker images for sources without native RSS / JS-rendered sites.
+- **`backfill`** — Fundus-based historical crawl (live websites + CC-NEWS archive). Runs under compose profile `backfill`.
+
+---
+
+## MCP tool reference
+
+All tools below are available in this release via the `mcp_server` service.
+
+### `search_articles(query, start_date?, end_date?, sources?, categories?, language="en", limit=20)`
+Full-text search using Postgres `tsvector` + `websearch_to_tsquery`. Results ranked by relevance then recency.
+
+### `get_recent_articles(lookback_minutes=60, sources?, categories?, limit=50)`
+Articles ingested in the last *N* minutes, newest first.
+
+### `get_article_by_url(url)`
+Fetch a single article by its (normalized) URL.
+
+### `list_sources()`
+Returns every configured source plus its last-ingest time and 24h article count.
+
+### `get_ingestion_status()`
+Queue depth, pending consumer-group messages, total + 24h article counts, last ingest timestamp.
+
+### Planned (next release)
+`get_gdelt_events`, `get_gdelt_themes`, `get_gdelt_tone_timeline`, `get_gdelt_entities`, `gdelt_doc_search`, `get_article_volume`.
+
+---
+
+## Adding sources
+
+Edit `sources/feeds.yaml`. Each entry needs a `name`, `tier` (A/B/C), `category`, and exactly one of `url` (direct RSS) or `rsshub_route` (RSSHub path — only usable once the RSSHub service ships).
+
+```yaml
+sources:
+  - name: My Wire Feed
+    url: https://example.com/feed.xml
+    tier: B
+    category: world
+```
+
+Restart the poller to pick up changes: `docker compose restart feed_poller`.
+
+---
+
+## Data retention policy
+
+| Data | Retention | Notes |
+|---|---|---|
+| `articles.content` | 6 months rolling | (planned cron) Truncate body, keep metadata |
+| `articles` metadata | 2 years | title, url, source, published_at, category |
+| `gdelt_events` | 2 years | TimescaleDB `drop_chunks()` (planned) |
+| `gdelt_gkg.gcam_scores` | 6 months | Large JSONB; truncate older rows (planned) |
+| `gdelt_gkg` metadata | 2 years | themes, persons, orgs, tone, url |
+
+Retention enforcement jobs land alongside the GDELT release.
+
+---
+
+## Development
+
+```bash
+# Local Python environment
+uv sync --all-extras
+
+# Run tests
+make test
+# or
+uv run pytest -v
+
+# Lint / format
+make lint
+make fmt
+
+# Add a migration
+uv run alembic revision -m "describe change"
+# edit migrations/versions/<rev>_describe_change.py
+uv run alembic -x db=postgres upgrade head
+# (or -x db=timescale for the GDELT target)
+```
+
+The `shared/` package is the only place env vars are read; service code imports `from shared.settings import settings`.
+
+---
+
+## What HERALD does not do
+
+- **No NLP enrichment** beyond what Trafilatura provides natively. Consuming systems add entity extraction, sentiment, classification, etc. as post-processing.
+- **No paywall bypass.** Trafilatura works on publicly-fetchable HTML only. Paywalled stories may be stored as metadata-only records (title/url/published_at) with `null` content.
+- **No social media** (Twitter/X, Reddit). Different problem, different rate-limiting and legal posture.
+- **No relevance ranking** of sources. All articles are equal; consuming systems apply their own logic.
+
+---
+
+## License
+
+MIT.
