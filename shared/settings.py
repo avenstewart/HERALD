@@ -122,7 +122,8 @@ class Settings(BaseSettings):
 
     @property
     def redis_url(self) -> str:
-        auth = f":{quote(self.redis_password)}@" if self.redis_password else ""
+        pw = self.redis_password.strip()
+        auth = f":{quote(pw)}@" if pw else ""
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db_app}"
 
     @staticmethod

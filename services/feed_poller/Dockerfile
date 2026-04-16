@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir \
     "feedparser>=6.0" "tldextract>=5.1" "structlog>=24.1"
 
 COPY shared/  ./shared/
+COPY sources/ ./sources/
 COPY services/__init__.py ./services/__init__.py
 COPY services/feed_poller/ ./services/feed_poller/
 

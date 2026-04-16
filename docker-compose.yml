@@ -84,8 +84,6 @@ services:
     env_file: .env
     environment:
       SOURCES_FILE: /app/sources/feeds.yaml
-    volumes:
-      - ./sources:/app/sources:ro
     networks:
       herald-net:
         ipv4_address: ${HERALD_FEED_POLLER_IP}
@@ -115,8 +113,6 @@ services:
     env_file: .env
     environment:
       SOURCES_FILE: /app/sources/feeds.yaml
-    volumes:
-      - ./sources:/app/sources:ro
     ports:
       - "${MCP_PORT:-8000}:8000"
     networks:

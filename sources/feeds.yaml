@@ -17,15 +17,15 @@ sources:
     tier: B
     category: world
 
-  - name: AP Top News
-    url: https://rsshub.app/apnews/topics/apf-topnews
+  - name: Reuters World
+    url: https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best
     tier: A
     category: wire
 
-  - name: SEC Press Releases
-    url: https://www.sec.gov/rss/news/press.rss
-    tier: A
-    category: regulatory
+  - name: NPR News
+    url: https://feeds.npr.org/1001/rss.xml
+    tier: B
+    category: general
 
   - name: FDA News Releases
     url: https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml

@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir \
     "python-dateutil>=2.9" "fastmcp>=0.2.0" "structlog>=24.1"
 
 COPY shared/  ./shared/
+COPY sources/ ./sources/
 COPY services/__init__.py ./services/__init__.py
 COPY services/mcp_server/ ./services/mcp_server/
 
