@@ -105,6 +105,17 @@ services:
         ipv4_address: ${HERALD_EXTRACTOR_IP}
     restart: unless-stopped
 
+  gdelt_ingestor:
+    build:
+      context: .
+      dockerfile: services/gdelt_ingestor/Dockerfile
+    container_name: herald_gdelt_ingestor
+    env_file: .env
+    networks:
+      herald-net:
+        ipv4_address: ${HERALD_GDELT_INGESTOR_IP}
+    restart: unless-stopped
+
   mcp_server:
     build:
       context: .

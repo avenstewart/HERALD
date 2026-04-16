@@ -48,14 +48,12 @@ All HERALD containers are prefixed `herald_` and attach to a Docker network with
 |---|---|
 | `feed_poller` — direct-RSS poller | ✅ shipped |
 | `extractor` — Trafilatura workers | ✅ shipped |
-| `mcp_server` — FastMCP query interface | ✅ shipped (article tools) |
+| `mcp_server` — FastMCP query interface | ✅ shipped (article + GDELT tools) |
 | `postgres` schema + migration `0001_articles` | ✅ shipped |
-| `timescaledb` schema (hypertables, retention, GDELT migration `0002`) | 🛠️ planned |
-| `gdelt_ingestor` service | 🛠️ planned |
+| `timescaledb` schema (hypertables, retention, migration `0002_gdelt`) | ✅ shipped |
+| `gdelt_ingestor` service | ✅ shipped |
 | `rsshub` + `browserless` for JS-rendered sources | 🛠️ planned |
 | `backfill` service (Fundus + CC-NEWS) | 🛠️ planned |
-
-The bootstrap script and docker-compose **already provision the TimescaleDB instance**, so future releases only add code — no infrastructure churn.
 
 ---
 
@@ -68,6 +66,7 @@ The bootstrap script and docker-compose **already provision the TimescaleDB inst
 | `herald_redis` | queue + dedup | `HERALD_REDIS_IP` |
 | `herald_feed_poller` | RSS poller | `HERALD_FEED_POLLER_IP` |
 | `herald_extractor` | Trafilatura worker | `HERALD_EXTRACTOR_IP` |
+| `herald_gdelt_ingestor` | GDELT v2 ingestor | `HERALD_GDELT_INGESTOR_IP` |
 | `herald_mcp_server` | FastMCP endpoint | `HERALD_MCP_SERVER_IP` |
 
 Every container attaches to an external Docker network named by `HERALD_NETWORK_NAME` (default: `herald-net`). The network is managed outside of HERALD — create it once on the target Docker host if it doesn't already exist. Example using a macvlan driver:
@@ -192,8 +191,12 @@ Workers (default 4 replicas) that consume from `herald:article_queue` via a shar
 ### `mcp_server`
 FastMCP server on port 8000. Exposes article query tools to consuming agents. Connects to Postgres via an asyncpg pool. GDELT tools are scheduled for the next release.
 
+### `gdelt_ingestor`
+Polls `http://data.gdeltproject.org/gdeltv2/lastupdate.txt` every 60s. When a new 15-minute batch appears, downloads the Events and GKG CSVs (Mentions is skipped by default), parses them, and bulk-inserts into TimescaleDB hypertables. Batch state tracked in a `gdelt_state` singleton table so restarts don't re-ingest.
+
+**Per-batch scale:** Events ≈ 40–100k rows, GKG ≈ 200–500k rows. At 2-year retention with TimescaleDB compression, expect ~150–250 GB on the Timescale volume.
+
 ### Planned services
-- **`gdelt_ingestor`** — polls GDELT v2 every 15 min, writes Events + GKG to TimescaleDB hypertables.
 - **`rsshub`** + **`browserless`** — third-party Docker images for sources without native RSS / JS-rendered sites.
 - **`backfill`** — Fundus-based historical crawl (live websites + CC-NEWS archive). Runs under compose profile `backfill`.
 
@@ -218,8 +221,25 @@ Returns every configured source plus its last-ingest time and 24h article count.
 ### `get_ingestion_status()`
 Queue depth, pending consumer-group messages, total + 24h article counts, last ingest timestamp.
 
-### Planned (next release)
-`get_gdelt_events`, `get_gdelt_themes`, `get_gdelt_tone_timeline`, `get_gdelt_entities`, `gdelt_doc_search`, `get_article_volume`.
+### GDELT tools
+
+#### `get_gdelt_events(start_date, end_date, actor1_country?, actor2_country?, cameo_root_code?, min_goldstein?, max_goldstein?, min_mentions?, limit=50)`
+Query CAMEO-coded events from GDELT v2. Actor countries use FIPS 2-char codes. CAMEO root codes are the 20 coarse categories (e.g. `14` = PROTEST, `19` = FIGHT).
+
+#### `get_gdelt_themes(themes, start_date, end_date, limit=50)`
+Find GKG records whose `themes` array overlaps any of the given codes (see `sources/gdelt_themes.yaml` for a curated catalogue).
+
+#### `get_gdelt_tone_timeline(start_date, end_date, themes?, resolution='hour')`
+Average media tone and article volume bucketed over time (`minute`, `hour`, or `day`). Useful for detecting sentiment regime shifts.
+
+#### `get_gdelt_entities(entity_type, start_date, end_date, min_mentions=5, limit=50)`
+Top-N most-mentioned persons, organizations, or locations in a window.
+
+#### `gdelt_doc_search(query, timespan='24h', mode='artlist', max_records=75)`
+Proxy to GDELT's DOC 2.0 API — searches GDELT's 3-month rolling full-text index. Supports query operators like `theme:ECON_INFLATION`, `tone<-5`, `sourcecountry:US`, and phrase search.
+
+### Planned
+`get_article_volume` — time-series of article counts (detecting news volume spikes).
 
 ---
 

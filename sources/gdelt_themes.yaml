@@ -1,0 +1,50 @@
+# Curated subset of the GDELT Global Knowledge Graph theme taxonomy.
+#
+# The full list has ~3000 themes (see the GDELT GKG codebook:
+# http://data.gdeltproject.org/api/v2/guides/GDELT-GKG-Theme-Lookup-Table.TXT).
+# This file is a reference catalogue of theme codes useful for financial,
+# macro-economic, geopolitical, and regulatory monitoring. Consuming agents
+# can load it to resolve human-readable labels or to build UI filters.
+
+economic:
+  ECON_INFLATION: Inflation
+  ECON_INTERESTRATE: Interest rates
+  ECON_RECESSION: Recession
+  ECON_UNEMPLOYMENT: Unemployment
+  ECON_TRADE: Trade
+  ECON_STOCKMARKET: Stock market
+  ECON_BANKRUPTCY: Bankruptcy
+  ECON_CURRENCY: Currency / FX
+  ECON_OILPRICE: Oil prices
+  ECON_HOUSING_PRICES: Housing prices
+
+geopolitical:
+  WB_2117_POLITICAL_INSTABILITY: Political instability
+  PROTEST: Protest
+  TAX_FNCACT_PRESIDENT: Head of state activity
+  SANCTION: Sanctions / trade restrictions
+  TAX_WORLDMAMMALS_WAR: Armed conflict
+  ARMEDCONFLICT: Armed conflict (modern code)
+  ELECTION: Elections
+  DIPLOMATIC_RECOGNITION: Diplomatic recognition
+
+energy_commodities:
+  WB_696_ENERGY_AND_MINING: Energy and mining
+  ENV_CLIMATECHANGE: Climate change
+  WB_579_AGRICULTURE_AND_FOOD_SECURITY: Agriculture / food security
+  NATURAL_DISASTER: Natural disaster
+
+regulatory_legal:
+  CRISISLEX_T03_DEAD: Fatalities / crisis
+  UNGP_FORESTS_RIVERS_OCEANS: Environmental regulation
+  GENERAL_GOVERNMENT: Government / regulatory activity
+  FISCAL_POLICY: Fiscal policy
+  CORRUPTION: Corruption
+  LEGAL_PROCEEDINGS: Legal / court proceedings
+
+technology_society:
+  AFFECT: Emotional / affective content
+  SOC_GENERALCRIME: General crime
+  MEDIA_SOCIAL: Social media activity
+  SCIENCE_TECH: Science and technology
+  HEALTH_PANDEMIC: Pandemic / epidemic
