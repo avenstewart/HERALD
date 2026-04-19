@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     rsshub_host: str = "rsshub"
     rsshub_port: int = 1200
 
+    # ── GDELT DOC API client ────────────────────────────────────────────────
+    gdelt_doc_rate_per_sec: float = 1.0
+    gdelt_doc_burst: int = 3
+    gdelt_doc_max_retries: int = 4
+    gdelt_doc_retry_base_delay: float = 1.0
+    gdelt_doc_retry_max_delay: float = 30.0
+    gdelt_doc_timeout: float = 30.0
+
     # ── bootstrap (only used by scripts/bootstrap_db.py) ────────────────────
     bootstrap_pg_superuser: str = "postgres"
     bootstrap_pg_superpass: str = ""

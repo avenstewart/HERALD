@@ -13,6 +13,7 @@ import signal
 from fastmcp import FastMCP
 
 from services.mcp_server.db import close_pool
+from services.mcp_server.gdelt_client import close_doc_client
 from services.mcp_server.tools import articles, gdelt
 from shared.logging import configure_logging
 from shared.settings import settings
@@ -36,6 +37,7 @@ gdelt.register(mcp)
 
 
 async def _shutdown() -> None:
+    await close_doc_client()
     await close_pool()
 
 

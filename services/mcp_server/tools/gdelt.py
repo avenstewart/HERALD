@@ -5,14 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
-import httpx
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from services.mcp_server.db import get_timescale_pool
+from services.mcp_server.gdelt_client import DOC_API_URL, get_doc_client
 from shared.utils import parse_date
-
-DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 
 # ── result schemas ───────────────────────────────────────────────────────────
@@ -243,11 +241,11 @@ def register(mcp: FastMCP) -> None:
             "maxrecords": str(max_records),
             "format": "json",
         }
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(DOC_API_URL, params=params)
-            resp.raise_for_status()
-            try:
-                return resp.json()
-            except ValueError:
-                # DOC API sometimes returns non-JSON on empty timespans.
-                return {"raw": resp.text[:2000]}
+        client = get_doc_client()
+        resp = await client.get(DOC_API_URL, params=params)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except ValueError:
+            # DOC API sometimes returns non-JSON on empty timespans.
+            return {"raw": resp.text[:2000]}

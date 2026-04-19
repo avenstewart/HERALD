@@ -1,0 +1,71 @@
+# docker-compose.override.yml — example overlay for integrating HERALD into
+# an existing stack without editing the main docker-compose.yml.
+#
+# To use this file:
+#   1. cp docker-compose.override.yml.example docker-compose.override.yml
+#   2. Edit the values below for your environment.
+#   3. Docker Compose automatically merges override files on every invocation.
+#
+# This file is a loose collection of patterns — uncomment the blocks you need.
+# The main docker-compose.yml assumes the bundled-db profile by default; this
+# override demonstrates pointing HERALD at externally-managed services.
+
+services:
+  # ── Disable the bundled database containers ─────────────────────────────
+  # (Better: set COMPOSE_PROFILES= (empty) in .env; this is the explicit
+  # equivalent when you can't change env.)
+  # postgres:
+  #   profiles: ["disabled"]
+  # timescaledb:
+  #   profiles: ["disabled"]
+  # redis:
+  #   profiles: ["disabled"]
+
+  # ── Attach every HERALD service to an additional external network ───────
+  # Useful when HERALD's containers need to reach services on a separate
+  # network (a shared DB network, an ingress network, etc.).
+  # feed_poller:
+  #   networks:
+  #     shared-services: {}
+  # extractor:
+  #   networks:
+  #     shared-services: {}
+  # gdelt_ingestor:
+  #   networks:
+  #     shared-services: {}
+  # mcp_server:
+  #   networks:
+  #     shared-services: {}
+
+  # ── Expose MCP behind a reverse proxy (Traefik example) ──────────────────
+  # mcp_server:
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.herald-mcp.rule=Host(`herald.example.com`)"
+  #     - "traefik.http.routers.herald-mcp.tls=true"
+  #     - "traefik.http.services.herald-mcp.loadbalancer.server.port=8000"
+
+  # ── Mount a custom CA bundle so services can talk to TLS-protected     ──
+  # ── external databases with a private CA                                ──
+  # extractor:
+  #   volumes:
+  #     - ./certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro
+  #   environment:
+  #     SSL_CERT_FILE: /etc/ssl/certs/internal-ca.crt
+  # gdelt_ingestor:
+  #   volumes:
+  #     - ./certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro
+  #   environment:
+  #     SSL_CERT_FILE: /etc/ssl/certs/internal-ca.crt
+
+  # ── Pin specific image tags for reproducible builds ─────────────────────
+  # rsshub:
+  #   image: diygod/rsshub:1-ubuntu
+  # browserless:
+  #   image: ghcr.io/browserless/chromium:v2.36.0
+
+# ── Additional external networks referenced above ────────────────────────
+# networks:
+#   shared-services:
+#     external: true
+#     name: shared-services
