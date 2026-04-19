@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
+import httpx
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from services.mcp_server.db import get_timescale_pool
-from services.mcp_server.gdelt_client import DOC_API_URL, get_doc_client
+from services.mcp_server.gdelt_client import DOC_API_URL, RateLimitExceeded, get_doc_client
+from shared.logging import configure_logging
 from shared.utils import parse_date
+
+log = configure_logging("gdelt_tools")
 
 
 # ── result schemas ───────────────────────────────────────────────────────────
@@ -233,7 +237,14 @@ def register(mcp: FastMCP) -> None:
         mode: Annotated[str, Field(description="artlist | timelinevol | timelinetone")] = "artlist",
         max_records: int = 75,
     ) -> dict:
-        """Proxy to GDELT's DOC 2.0 API — searches GDELT's 3-month rolling full-text index."""
+        """Proxy to GDELT's DOC 2.0 API — searches GDELT's 3-month rolling full-text index.
+
+        This tool is rate-limited to respect upstream GDELT API quotas.  If the
+        rate limit is exceeded, the response will contain an ``error`` key with
+        fallback suggestions.  Prefer ``get_gdelt_events``,
+        ``get_gdelt_themes``, or ``get_gdelt_tone_timeline`` for data already
+        ingested into HERALD's local database (no rate limit).
+        """
         params = {
             "query": query,
             "mode": mode,
@@ -242,8 +253,33 @@ def register(mcp: FastMCP) -> None:
             "format": "json",
         }
         client = get_doc_client()
-        resp = await client.get(DOC_API_URL, params=params)
-        resp.raise_for_status()
+        try:
+            resp = await client.get(DOC_API_URL, params=params)
+            resp.raise_for_status()
+        except RateLimitExceeded:
+            log.warning("gdelt_doc_search_rate_limited", query=query)
+            return {
+                "error": "rate_limit_exceeded",
+                "message": (
+                    "GDELT DOC API rate limit reached — too many concurrent requests. "
+                    "Use these HERALD tools instead (they query the local database "
+                    "with no rate limit): get_gdelt_events, get_gdelt_themes, "
+                    "get_gdelt_tone_timeline, get_gdelt_entities."
+                ),
+            }
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                log.warning("gdelt_doc_search_429_after_retries", query=query)
+                return {
+                    "error": "rate_limit_exceeded",
+                    "message": (
+                        "GDELT DOC API returned 429 after retries. "
+                        "Use these HERALD tools instead (they query the local database "
+                        "with no rate limit): get_gdelt_events, get_gdelt_themes, "
+                        "get_gdelt_tone_timeline, get_gdelt_entities."
+                    ),
+                }
+            raise
         try:
             return resp.json()
         except ValueError:
