@@ -23,6 +23,14 @@ DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 _LIMITER_KEY = "herald:gdelt_doc:bucket"
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
+
+class ThrottledError(Exception):
+    """Raised when the token bucket can't grant a token within ``max_wait``."""
+
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+        super().__init__(f"DOC API throttled; retry after {retry_after:.2f}s")
+
 # Atomic token-bucket: refills at `rate` tokens/sec up to `capacity`, consumes
 # `requested` tokens if available, otherwise returns the ms the caller should
 # wait before the bucket will have enough.
@@ -67,8 +75,13 @@ class RedisTokenBucket:
         self._capacity = int(capacity)
         self._script = redis.register_script(_BUCKET_LUA)
 
-    async def acquire(self, tokens: int = 1) -> None:
-        """Block until `tokens` can be taken from the bucket."""
+    async def acquire(self, tokens: int = 1, max_wait: float | None = None) -> None:
+        """Block until `tokens` can be taken from the bucket.
+
+        Raises ``ThrottledError`` if the cumulative wait would exceed
+        ``max_wait`` seconds. ``max_wait=None`` waits indefinitely.
+        """
+        start = time.monotonic()
         while True:
             now_ms = int(time.time() * 1000)
             wait_ms = await self._script(
@@ -78,6 +91,10 @@ class RedisTokenBucket:
             wait = int(wait_ms) / 1000.0
             if wait <= 0:
                 return
+            if max_wait is not None:
+                elapsed = time.monotonic() - start
+                if elapsed + wait > max_wait:
+                    raise ThrottledError(retry_after=wait)
             # jitter avoids a thundering herd of waiters waking simultaneously
             await asyncio.sleep(wait + random.uniform(0, 0.1))
 
@@ -151,8 +168,16 @@ class GdeltDocClient:
             capacity=settings.gdelt_doc_burst,
         )
 
-    async def get(self, url: str, params: dict[str, str]) -> httpx.Response:
-        await self._limiter.acquire()
+    async def get(
+        self,
+        url: str,
+        params: dict[str, str],
+        max_wait: float | None = None,
+    ) -> httpx.Response:
+        effective_max_wait = (
+            max_wait if max_wait is not None else settings.gdelt_doc_max_wait
+        )
+        await self._limiter.acquire(max_wait=effective_max_wait)
         return await self._client.get(url, params=params)
 
     async def aclose(self) -> None:

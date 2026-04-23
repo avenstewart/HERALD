@@ -9,7 +9,8 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from services.mcp_server.db import get_timescale_pool
-from services.mcp_server.gdelt_client import DOC_API_URL, get_doc_client
+from services.mcp_server.gdelt_client import DOC_API_URL, ThrottledError, get_doc_client
+from shared.settings import settings
 from shared.utils import parse_date
 
 
@@ -242,7 +243,20 @@ def register(mcp: FastMCP) -> None:
             "format": "json",
         }
         client = get_doc_client()
-        resp = await client.get(DOC_API_URL, params=params)
+        try:
+            resp = await client.get(DOC_API_URL, params=params)
+        except ThrottledError as exc:
+            return {
+                "throttled": True,
+                "retry_after_seconds": round(exc.retry_after, 2),
+                "limit_rate_per_sec": settings.gdelt_doc_rate_per_sec,
+                "limit_burst": settings.gdelt_doc_burst,
+                "max_wait_seconds": settings.gdelt_doc_max_wait,
+                "hint": (
+                    "HERALD's global DOC API rate limiter deferred this request. "
+                    "Sleep `retry_after_seconds` and retry the same tool call."
+                ),
+            }
         resp.raise_for_status()
         try:
             return resp.json()
